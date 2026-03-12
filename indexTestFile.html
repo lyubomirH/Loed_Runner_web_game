@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Урок 5 - Звуци и музика</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            border: 3px solid #fff;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        #controls {
+            color: white;
+            text-align: center;
+            margin-top: 20px;
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 5px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+        .sound-indicator {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            background: #ff4444;
+            border-radius: 50%;
+            margin: 0 10px;
+            animation: pulse 1s infinite;
+        }
+        .sound-indicator.playing {
+            background: #44ff44;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="controls">
+            <h2>🎵 Урок 5 - Звуци и музика в игрите</h2>
+            
+            <div style="margin: 20px 0;">
+                <span class="sound-indicator" id="musicIndicator"></span>
+                <span>Background Music</span>
+                <button onclick="toggleBackgroundMusic()">🎶 Toggle Music</button>
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <button onclick="playJumpSound()">🦘 Jump Sound</button>
+                <button onclick="playCoinSound()">🪙 Coin Sound</button>
+                <button onclick="playExplosionSound()">💥 Explosion</button>
+                <button onclick="playPowerUpSound()">⭐ Power Up</button>
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <button onclick="spawnSoundBall()">🎾 Create Sound Ball</button>
+                <button onclick="clearCanvas()">🧹 Clear All</button>
+            </div>
+            
+            <p style="font-size: 14px; margin-top: 20px;">
+                💡 AI съвет: Опитайте различни звуци за различни действия!<br>
+                Кликнете върху топките за звукови ефекти!
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Audio System
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let backgroundMusic = null;
+        let isBackgroundMusicPlaying = false;
+        
+        // Game objects with sound
+        let soundBalls = [];
+        
+        // Simple synthesized sound creation
+        function createTone(frequency, duration, type = 'sine') {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = frequency;
+            oscillator.type = type;
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration);
+        }
+        
+        function createBackgroundMusic() {
+            // Simple melodic loop
+            const melody = [262, 294, 330, 349, 392, 440, 494, 523]; // C major scale
+            let noteIndex = 0;
+            
+            function playNextNote() {
+                if (isBackgroundMusicPlaying) {
+                    createTone(melody[noteIndex], 0.5, 'sine');
+                    noteIndex = (noteIndex + 1) % melody.length;
+                    setTimeout(playNextNote, 600);
+                }
+            }
+            
+            playNextNote();
+        }
+        
+        function toggleBackgroundMusic() {
+            const indicator = document.getElementById('musicIndicator');
+            
+            if (isBackgroundMusicPlaying) {
+                isBackgroundMusicPlaying = false;
+                indicator.classList.remove('playing');
+            } else {
+                isBackgroundMusicPlaying = true;
+                indicator.classList.add('playing');
+                createBackgroundMusic();
+            }
+        }
+        
+        // Sound effects
+        function playJumpSound() {
+            // Quick ascending tone
+            createTone(200, 0.1, 'square');
+            setTimeout(() => createTone(400, 0.1, 'square'), 50);
+        }
+        
+        function playCoinSound() {
+            // Classic coin sound
+            createTone(988, 0.1, 'square');
+            setTimeout(() => createTone(1319, 0.2, 'square'), 100);
+        }
+        
+        function playExplosionSound() {
+            // Noise-like explosion
+            const noise = audioContext.createBufferSource();
+            const buffer = audioContext.createBuffer(1, audioContext.sampleRate * 0.3, audioContext.sampleRate);
+            const data = buffer.getChannelData(0);
+            
+            for (let i = 0; i < data.length; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            
+            noise.buffer = buffer;
+            const gainNode = audioContext.createGain();
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            
+            noise.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            noise.start();
+        }
+        
+        function playPowerUpSound() {
+            // Ascending arpeggio
+            const notes = [262, 330, 392, 523];
+            notes.forEach((freq, index) => {
+                setTimeout(() => createTone(freq, 0.2, 'triangle'), index * 100);
+            });
+        }
+        
+        // Interactive sound balls
+        class SoundBall {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 20 + Math.random() * 30;
+                this.color = `hsl(${Math.random() * 360}, 70%, 60%)`;
+                this.speedX = (Math.random() - 0.5) * 4;
+                this.speedY = (Math.random() - 0.5) * 4;
+                this.frequency = 200 + Math.random() * 600;
+                this.bounceCount = 0;
+            }
+            
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                
+                // Bounce off walls with sound
+                if (this.x + this.radius > canvas.width || this.x - this.radius < 0) {
+                    this.speedX = -this.speedX;
+                    this.playBounceSound();
+                }
+                if (this.y + this.radius > canvas.height || this.y - this.radius < 0) {
+                    this.speedY = -this.speedY;
+                    this.playBounceSound();
+                }
+            }
+            
+            playBounceSound() {
+                createTone(this.frequency, 0.1, 'sine');
+                this.bounceCount++;
+                
+                // Change frequency slightly after each bounce
+                this.frequency += (Math.random() - 0.5) * 50;
+            }
+            
+            playClickSound() {
+                // Special sound when clicked
+                createTone(this.frequency, 0.3, 'sawtooth');
+                
+                // Visual feedback
+                this.radius *= 1.2;
+                setTimeout(() => {
+                    this.radius /= 1.2;
+                }, 200);
+            }
+            
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Draw frequency as text
+                ctx.fillStyle = '#000';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(Math.round(this.frequency) + 'Hz', this.x, this.y + 4);
+            }
+            
+            isClicked(mouseX, mouseY) {
+                const distance = Math.sqrt(Math.pow(mouseX - this.x, 2) + Math.pow(mouseY - this.y, 2));
+                return distance <= this.radius;
+            }
+        }
+        
+        function spawnSoundBall() {
+            const x = Math.random() * (canvas.width - 100) + 50;
+            const y = Math.random() * (canvas.height - 100) + 50;
+            soundBalls.push(new SoundBall(x, y));
+        }
+        
+        function clearCanvas() {
+            soundBalls = [];
+        }
+        
+        // Canvas click handling
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            soundBalls.forEach(ball => {
+                if (ball.isClicked(mouseX, mouseY)) {
+                    ball.playClickSound();
+                }
+            });
+        });
+        
+        // Game loop
+        function gameLoop() {
+            // Clear canvas
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Update and draw sound balls
+            soundBalls.forEach(ball => {
+                ball.update();
+                ball.draw();
+            });
+            
+            // Draw instructions if no balls
+            if (soundBalls.length === 0) {
+                ctx.fillStyle = '#fff';
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Създайте звукови топки и кликнете върху тях!', canvas.width/2, canvas.height/2);
+                
+                ctx.font = '16px Arial';
+                ctx.fillText('Всяка топка има своя уникална честота', canvas.width/2, canvas.height/2 + 40);
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Initialize
+        gameLoop();
+        
+        // Create initial sound balls
+        for (let i = 0; i < 3; i++) {
+            spawnSoundBall();
+        }
+        
+        console.log('🎵 Sound Integration Demo готов! Експериментирайте със звуците.');
+        console.log('💡 AI Prompt идея: "Генерирай 5 различни sound effect идеи за платформер игра"');
+    </script>
+</body>
+</html>
