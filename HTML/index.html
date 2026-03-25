@@ -1,0 +1,61 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Lode Runner NES - Classic Platformer</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <div class="game-wrapper">
+        <div class="game-container">
+            <div class="game-header">
+                <div class="logo-section">
+                    <h1>LODE RUNNER</h1>
+                    <div class="subtitle">NES CLASSIC</div>
+                </div>
+                <div class="stats-panel">
+                    <div class="stat-card">
+                        <span class="stat-label">💰 GOLD</span>
+                        <span class="stat-value" id="goldCount">0</span>
+                        <span class="stat-sep">/</span>
+                        <span class="stat-value" id="totalGold">0</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">⭐ SCORE</span>
+                        <span class="stat-value" id="scoreValue">0</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">❤️ LIVES</span>
+                        <span class="stat-value" id="livesCount">3</span>
+                    </div>
+                </div>
+                <div class="action-buttons">
+                    <button id="resetBtn" class="game-btn reset-btn">🔄 RESTART</button>
+                    <a href="scores.html" class="game-btn scores-btn">🏆 SCORES</a>
+                </div>
+            </div>
+            
+            <div class="canvas-wrapper">
+                <canvas id="gameCanvas" width="800" height="800"></canvas>
+            </div>
+            
+            <div class="controls-info">
+                <div class="control-group">
+                    <span class="control-key">W A S D</span>
+                    <span class="control-desc">Move & Climb</span>
+                </div>
+                <div class="control-group">
+                    <span class="control-key">O</span>
+                    <span class="control-desc">Dig Left Hole</span>
+                </div>
+                <div class="control-group">
+                    <span class="control-key">P</span>
+                    <span class="control-desc">Dig Right Hole</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="../js/main.js"></script>
+</body>
+</html>
