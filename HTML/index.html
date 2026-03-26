@@ -38,6 +38,17 @@
             
             <div class="canvas-wrapper">
                 <canvas id="gameCanvas" width="800" height="800"></canvas>
+                <div id="gameOverlay" class="game-overlay" style="display: none;">
+                    <div class="overlay-content">
+                        <div id="overlayIcon" class="overlay-icon">💀</div>
+                        <h2 id="overlayMessage">GAME OVER</h2>
+                        <div id="overlayScore" class="overlay-score"></div>
+                        <div class="overlay-buttons">
+                            <button id="overlayRestartBtn" class="game-btn">PLAY AGAIN</button>
+                            <a href="scores.html" class="game-btn scores-btn">VIEW SCORES</a>
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <div class="controls-info">

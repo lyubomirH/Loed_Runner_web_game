@@ -22,6 +22,7 @@ let brokenBlocks = new Map();
 let gameOverFlag = false;
 
 let goldCountElem, totalGoldElem, scoreValueElem, livesCountElem, resetBtn;
+let gameOverlay, overlayMessage, overlayRestartBtn, overlayScore, overlayIcon;
 
 const LEVEL_ONE = [
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
@@ -50,7 +51,7 @@ const LEVEL_ONE = [
     "B000000L00000000000000000000000B",
     "B000000L00000000000000000000000B",
     "B000000LBBBBBBBBBBBBBBBBBBBBBBBB",
-    "B0M0000L00000000000000000000000B",
+    "B000000L00000000000000000000000B",
     "B000000L00000000000000000000M00B",
     "B0S0000L000000G00000000000000E0B",
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
@@ -72,8 +73,14 @@ function init() {
     scoreValueElem = document.getElementById('scoreValue');
     livesCountElem = document.getElementById('livesCount');
     resetBtn = document.getElementById('resetBtn');
+    gameOverlay = document.getElementById('gameOverlay');
+    overlayMessage = document.getElementById('overlayMessage');
+    overlayRestartBtn = document.getElementById('overlayRestartBtn');
+    overlayScore = document.getElementById('overlayScore');
+    overlayIcon = document.getElementById('overlayIcon');
     
     if (resetBtn) resetBtn.addEventListener('click', () => resetGame());
+    if (overlayRestartBtn) overlayRestartBtn.addEventListener('click', () => resetGame());
     
     initMap();
     setupEventListeners();
@@ -82,48 +89,39 @@ function init() {
 }
 
 function setupEventListeners() {
-    // Keydown event
     window.addEventListener('keydown', (e) => {
         if (!gameRunning || !player || gameOverFlag) return;
         
         const key = e.key.toLowerCase();
-        console.log("Key pressed:", key);
         
         switch(key) {
             case 'a':
                 player.moveLeft = true;
-                console.log("Moving left");
                 e.preventDefault();
                 break;
             case 'd':
                 player.moveRight = true;
-                console.log("Moving right");
                 e.preventDefault();
                 break;
             case 'w':
                 player.moveUp = true;
-                console.log("Moving up");
                 e.preventDefault();
                 break;
             case 's':
                 player.moveDown = true;
-                console.log("Moving down");
                 e.preventDefault();
                 break;
             case 'o':
-                console.log("Digging left");
                 e.preventDefault();
                 tryDigLeft();
                 break;
             case 'p':
-                console.log("Digging right");
                 e.preventDefault();
                 tryDigRight();
                 break;
         }
     });
     
-    // Keyup event
     window.addEventListener('keyup', (e) => {
         if (!player) return;
         
@@ -150,7 +148,6 @@ function tryDigLeft() {
     if (!gameRunning || !player || gameOverFlag) return;
     const px = Math.floor(player.x);
     const py = Math.floor(player.y);
-    console.log("Dig left at:", px - 1, py + 1);
     if (py + 1 < MAP_HEIGHT) {
         digBlockAt(px - 1, py + 1);
     }
@@ -160,7 +157,6 @@ function tryDigRight() {
     if (!gameRunning || !player || gameOverFlag) return;
     const px = Math.floor(player.x);
     const py = Math.floor(player.y);
-    console.log("Dig right at:", px + 1, py + 1);
     if (py + 1 < MAP_HEIGHT) {
         digBlockAt(px + 1, py + 1);
     }
@@ -168,10 +164,8 @@ function tryDigRight() {
 
 function initMap() {
     console.log("Initializing map...");
-    // Create empty map
     map = Array(MAP_HEIGHT).fill().map(() => Array(MAP_WIDTH).fill('0'));
     
-    // Parse the level string into the map matrix
     for (let y = 0; y < MAP_HEIGHT && y < LEVEL_ONE.length; y++) {
         const row = LEVEL_ONE[y];
         for (let x = 0; x < MAP_WIDTH && x < row.length; x++) {
@@ -179,7 +173,6 @@ function initMap() {
         }
     }
     
-    // Reset game state
     totalGold = 0;
     goldCollected = 0;
     enemies = [];
@@ -187,42 +180,34 @@ function initMap() {
     gameOverFlag = false;
     gameRunning = true;
     
-    // Count gold and create player/enemies from map
+    if (gameOverlay) gameOverlay.style.display = 'none';
+    
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
             const tile = map[y][x];
-            if (tile === 'G') {
-                totalGold++;
-                console.log("Gold found at:", x, y);
-            }
+            if (tile === 'G') totalGold++;
             if (tile === 'S') {
                 player = new Player(x, y);
-                console.log("Player created at:", x, y);
                 map[y][x] = '0';
             }
             if (tile === 'M') {
                 enemies.push(new Enemy(x, y));
-                console.log("Enemy created at:", x, y);
                 map[y][x] = '0';
             }
         }
     }
     
-    // Fallback if no player found
     if (!player) {
         console.warn("No player found, creating at default position");
         player = new Player(15, 29);
     }
     
-    console.log("Total gold:", totalGold);
-    console.log("Enemies count:", enemies.length);
     updateUI();
 }
 
 function digBlockAt(x, y) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return;
     if (map[y][x] === 'B') {
-        console.log("Digging block at:", x, y);
         map[y][x] = 'F';
         brokenBlocks.set(`${x},${y}`, {
             restoreTime: Date.now() + DIG_COOLDOWN,
@@ -288,7 +273,7 @@ function checkPlayerEnemyCollision() {
                 console.log("Player caught by enemy!");
                 gameRunning = false;
                 gameOverFlag = true;
-                showGameOverMessage("You were caught!");
+                showGameOverScreen("caught");
                 return true;
             }
         }
@@ -299,10 +284,6 @@ function checkPlayerEnemyCollision() {
 function updatePlayer() {
     if (!player || gameOverFlag) return;
     
-    // Store old position for debugging
-    const oldX = player.x;
-    const oldY = player.y;
-    
     const onLadder = () => {
         const tx = Math.floor(player.x);
         const ty = Math.floor(player.y);
@@ -310,11 +291,6 @@ function updatePlayer() {
     };
     
     player.update(onLadder());
-    
-    // Log movement
-    if (oldX !== player.x || oldY !== player.y) {
-        console.log(`Player moved from (${oldX.toFixed(2)}, ${oldY.toFixed(2)}) to (${player.x.toFixed(2)}, ${player.y.toFixed(2)})`);
-    }
     
     const bx = Math.floor(player.x);
     const by = Math.floor(player.y + player.vy + 0.1);
@@ -343,7 +319,6 @@ function updatePlayer() {
     
     const gx = Math.floor(player.x), gy = Math.floor(player.y);
     if (gy >= 0 && gy < MAP_HEIGHT && gx >= 0 && gx < MAP_WIDTH && map[gy][gx] === 'G') {
-        console.log("Gold collected!");
         map[gy][gx] = '0';
         goldCollected++;
         score = goldCollected * 100;
@@ -357,7 +332,7 @@ function updatePlayer() {
             gameRunning = false;
             gameOverFlag = true;
             saveScore();
-            showGameOverMessage("LEVEL COMPLETE! YOU WIN!");
+            showGameOverScreen("win");
         }
     }
 }
@@ -401,6 +376,24 @@ function updateEnemies() {
             }
         }
     }
+}
+
+function showGameOverScreen(type) {
+    if (!gameOverlay) return;
+    
+    if (type === "win") {
+        overlayIcon.textContent = "🏆";
+        overlayMessage.textContent = "VICTORY!";
+        overlayMessage.style.color = "#ffaa33";
+        overlayScore.textContent = `Score: ${score} | Gold: ${goldCollected}/${totalGold}`;
+    } else {
+        overlayIcon.textContent = "💀";
+        overlayMessage.textContent = "GAME OVER";
+        overlayMessage.style.color = "#ff6666";
+        overlayScore.textContent = `Final Score: ${score} | Gold: ${goldCollected}/${totalGold}`;
+    }
+    
+    gameOverlay.style.display = 'flex';
 }
 
 function render() {
@@ -486,17 +479,6 @@ function updateUI() {
     if (livesCountElem) livesCountElem.textContent = lives;
 }
 
-function showGameOverMessage(message) {
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#FFF';
-    ctx.font = '24px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(message, canvas.width/2, canvas.height/2);
-    ctx.font = '16px monospace';
-    ctx.fillText('Press RESTART to play again', canvas.width/2, canvas.height/2 + 40);
-}
-
 function resetGame() {
     console.log("Resetting game...");
     gameRunning = true;
@@ -505,6 +487,7 @@ function resetGame() {
     score = 0;
     lives = 3;
     brokenBlocks.clear();
+    if (gameOverlay) gameOverlay.style.display = 'none';
     initMap();
     updateUI();
 }

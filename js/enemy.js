@@ -6,7 +6,7 @@ export class Enemy {
         this.y = y;
         this.vx = 0;
         this.vy = 0;
-        this.speed = 1.2;
+        this.speed = 0.5; // Reduced from 1.2 to 0.9 for slower enemy movement
         this.isStuck = false;
         this.stuckUntil = null;
         this.stuckBlockKey = null;

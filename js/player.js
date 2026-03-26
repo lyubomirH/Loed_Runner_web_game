@@ -10,7 +10,7 @@ export class Player {
         this.moveRight = false;
         this.moveUp = false;
         this.moveDown = false;
-        this.speed = 2.5;
+        this.speed = 0.1; // Reduced from 0.8 to 0.1 for slower movement
     }
     
     update(onLadder) {
