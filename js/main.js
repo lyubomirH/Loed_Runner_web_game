@@ -1,13 +1,23 @@
 ﻿// js/main.js - Main game logic, map management, game loop, and scoring
+// BLOCK HITBOX: Solid blocks (B) have a full 25x25 pixel collision hitbox
+// Player cannot move into or through any block tile
+// Player stands on top of blocks (collision from above)
+// Player collides with blocks from left and right sides
 
 import { Player } from './player.js';
 import { Enemy } from './enemy.js';
 
-const TILE_SIZE = 25;
-const MAP_WIDTH = 32;
-const MAP_HEIGHT = 32;
-const DIG_COOLDOWN = 6000;
-const ENEMY_STUCK_TIME = 5000;
+const TILE_SIZE = 25;        // 25x25 pixels per tile - block hitbox size
+const MAP_WIDTH = 32;        // 32 tiles wide
+const MAP_HEIGHT = 32;       // 32 tiles tall
+const DIG_COOLDOWN = 6000;   // 6 seconds for block regeneration
+const ENEMY_STUCK_TIME = 5000; // 5 seconds enemy stuck
+
+// Gravity constants
+const GRAVITY_NORMAL = 0.12;
+const GRAVITY_BROKEN = 0.18;
+const GRAVITY_ENEMY = 0.09;
+const GRAVITY_ENEMY_BROKEN = 0.2;
 
 let canvas, ctx;
 let gameRunning = true;
@@ -208,11 +218,13 @@ function initMap() {
 function digBlockAt(x, y) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return;
     if (map[y][x] === 'B') {
+        console.log("Digging block at:", x, y);
         map[y][x] = 'F';
         brokenBlocks.set(`${x},${y}`, {
             restoreTime: Date.now() + DIG_COOLDOWN,
             enemyStuckUntil: null,
-            stuckEnemyDirection: null
+            stuckEnemyDirection: null,
+            enemyCaptured: null
         });
     }
 }
@@ -225,54 +237,69 @@ function updateBrokenBlocks() {
         const [x, y] = key.split(',').map(Number);
         
         if (now >= data.restoreTime) {
-            if (data.enemyStuckUntil && now < data.enemyStuckUntil) {
-                const stuckEnemy = enemies.find(e => e.isStuck && e.stuckBlockKey === key);
-                if (stuckEnemy) {
+            if (data.enemyCaptured) {
+                const capturedEnemy = data.enemyCaptured;
+                if (capturedEnemy.isCaptured) {
                     let respawnY = y - 1;
-                    while (respawnY > 0 && map[respawnY][x] !== '0') respawnY--;
+                    while (respawnY > 0 && map[respawnY][x] !== '0') {
+                        respawnY--;
+                    }
                     if (respawnY >= 0 && map[respawnY][x] === '0') {
-                        stuckEnemy.x = x;
-                        stuckEnemy.y = respawnY;
-                        stuckEnemy.isStuck = false;
-                        stuckEnemy.stuckBlockKey = null;
-                        stuckEnemy.stuckUntil = null;
+                        capturedEnemy.x = x;
+                        capturedEnemy.y = respawnY;
+                        capturedEnemy.isCaptured = false;
+                        capturedEnemy.capturedBlockKey = null;
+                        capturedEnemy.vy = 0;
+                        console.log("Enemy released from captured block at:", x, y);
                     } else {
-                        const idx = enemies.indexOf(stuckEnemy);
+                        const idx = enemies.indexOf(capturedEnemy);
                         if (idx > -1) enemies.splice(idx, 1);
+                        console.log("Enemy died - no safe spot to respawn");
                     }
                 }
             }
             toRestore.push({ x, y, key });
         }
-        else if (data.enemyStuckUntil && now >= data.enemyStuckUntil) {
-            const stuckEnemy = enemies.find(e => e.isStuck && e.stuckBlockKey === key);
-            if (stuckEnemy) {
-                const dir = data.stuckEnemyDirection;
-                stuckEnemy.x = dir === 'right' ? x + 1 : x - 1;
-                stuckEnemy.y = y - 1;
-                stuckEnemy.isStuck = false;
-                stuckEnemy.stuckBlockKey = null;
-                stuckEnemy.stuckUntil = null;
-                data.enemyStuckUntil = null;
-                data.stuckEnemyDirection = null;
-            }
-        }
     }
     
     for (let { x, y, key } of toRestore) {
-        if (map[y][x] === 'F') map[y][x] = 'B';
+        if (map[y][x] === 'F') {
+            map[y][x] = 'B';
+        }
         brokenBlocks.delete(key);
     }
+}
+
+function checkPlayerInsideBlock() {
+    if (!player || gameOverFlag) return false;
+    
+    const px = Math.floor(player.x);
+    const py = Math.floor(player.y);
+    
+    if (py >= 0 && py < MAP_HEIGHT && px >= 0 && px < MAP_WIDTH) {
+        const tileAtPlayer = map[py][px];
+        if (tileAtPlayer === 'B') {
+            console.log("Player crushed inside block!");
+            gameRunning = false;
+            gameOverFlag = true;
+            saveScore();
+            showGameOverScreen("crushed");
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 function checkPlayerEnemyCollision() {
     if (!player || gameOverFlag) return false;
     for (let enemy of enemies) {
         if (Math.abs(player.x - enemy.x) < 0.8 && Math.abs(player.y - enemy.y) < 0.8) {
-            if (!enemy.isStuck) {
+            if (!enemy.isStuck && !enemy.isCaptured) {
                 console.log("Player caught by enemy!");
                 gameRunning = false;
                 gameOverFlag = true;
+                saveScore();
                 showGameOverScreen("caught");
                 return true;
             }
@@ -290,23 +317,51 @@ function updatePlayer() {
         return (ty >= 0 && ty < MAP_HEIGHT && tx >= 0 && tx < MAP_WIDTH && map[ty][tx] === 'L');
     };
     
-    player.update(onLadder());
+    player.update(onLadder, map);
+    
+    const currentTileX = Math.floor(player.x);
+    const currentTileY = Math.floor(player.y);
+    if (currentTileY >= 0 && currentTileY < MAP_HEIGHT && currentTileX >= 0 && currentTileX < MAP_WIDTH) {
+        if (map[currentTileY][currentTileX] === 'B') {
+            console.log("Player entered a block!");
+            gameRunning = false;
+            gameOverFlag = true;
+            saveScore();
+            showGameOverScreen("crushed");
+            return;
+        }
+    }
+    
+    const brokenCheckX = Math.floor(player.x);
+    const brokenCheckY = Math.floor(player.y + 0.5);
+    
+    if (brokenCheckY >= 0 && brokenCheckY < MAP_HEIGHT && brokenCheckX >= 0 && brokenCheckX < MAP_WIDTH) {
+        const tileBelow = map[brokenCheckY][brokenCheckX];
+    }
     
     const bx = Math.floor(player.x);
     const by = Math.floor(player.y + player.vy + 0.1);
     let onGround = false;
+    let tileBelowType = null;
     
     if (by >= 0 && by < MAP_HEIGHT && bx >= 0 && bx < MAP_WIDTH) {
-        const tileBelow = map[by][bx];
-        if (tileBelow === 'B' || tileBelow === 'F') {
+        tileBelowType = map[by][bx];
+        if (tileBelowType === 'B') {
             onGround = true;
             player.vy = 0;
             player.y = Math.floor(player.y);
+        } else if (tileBelowType === 'F') {
+            onGround = false;
+            player.vy += GRAVITY_BROKEN;
+            player.y += player.vy;
         }
     }
     
-    if (!onGround && !onLadder()) {
-        player.vy += 0.2;
+    if (!onGround && !onLadder() && tileBelowType !== 'F') {
+        player.vy += GRAVITY_NORMAL;
+        player.y += player.vy;
+    } else if (tileBelowType === 'F') {
+        player.vy += GRAVITY_BROKEN;
         player.y += player.vy;
     } else if (onLadder()) {
         player.vy = 0;
@@ -350,31 +405,58 @@ function updateEnemies() {
     for (let enemy of enemies) {
         enemy.update(map, player, brokenBlocks);
         
-        const tx = Math.floor(enemy.x), ty = Math.floor(enemy.y);
-        if (ty >= 0 && ty < MAP_HEIGHT && tx >= 0 && tx < MAP_WIDTH && map[ty][tx] === 'F' && !enemy.isStuck) {
-            const key = `${tx},${ty}`;
-            const brokenData = brokenBlocks.get(key);
-            if (brokenData && !brokenData.enemyStuckUntil) {
-                enemy.isStuck = true;
-                enemy.stuckUntil = Date.now() + ENEMY_STUCK_TIME;
-                enemy.stuckBlockKey = key;
-                brokenData.enemyStuckUntil = Date.now() + ENEMY_STUCK_TIME;
-                brokenData.stuckEnemyDirection = enemy.lastMoveDir === 'left' ? 'left' : 'right';
-                enemy.vx = 0;
+        const tx = Math.floor(enemy.x);
+        const ty = Math.floor(enemy.y + 0.5);
+        
+        if (ty >= 0 && ty < MAP_HEIGHT && tx >= 0 && tx < MAP_WIDTH && !enemy.isStuck && !enemy.isCaptured) {
+            const tileAtPosition = map[ty][tx];
+            
+            if (tileAtPosition === 'F') {
+                const key = `${tx},${ty}`;
+                const brokenData = brokenBlocks.get(key);
+                
+                if (brokenData && !brokenData.enemyCaptured) {
+                    console.log("Enemy captured inside broken block at:", tx, ty);
+                    enemy.isCaptured = true;
+                    enemy.capturedBlockKey = key;
+                    enemy.isStuck = false;
+                    enemy.vy = 0;
+                    enemy.vx = 0;
+                    enemy.x = tx;
+                    enemy.y = ty;
+                    brokenData.enemyCaptured = enemy;
+                }
+            }
+        }
+        
+        if (!enemy.isCaptured && !enemy.isStuck) {
+            const bx = Math.floor(enemy.x);
+            const by = Math.floor(enemy.y + 0.2);
+            let onGround = false;
+            
+            if (by >= 0 && by < MAP_HEIGHT && bx >= 0 && bx < MAP_WIDTH) {
+                const tileBelow = map[by][bx];
+                if (tileBelow === 'B') {
+                    onGround = true;
+                    enemy.vy = 0;
+                    enemy.y = Math.floor(enemy.y);
+                } else if (tileBelow === 'F') {
+                    onGround = false;
+                    enemy.vy += GRAVITY_ENEMY_BROKEN;
+                    enemy.y += enemy.vy;
+                }
+            }
+            
+            if (!onGround) {
+                enemy.vy += GRAVITY_ENEMY;
+                enemy.y += enemy.vy;
+            } else {
                 enemy.vy = 0;
             }
         }
         
-        if (!enemy.isStuck) {
-            const belowX = Math.floor(enemy.x);
-            const belowY = Math.floor(enemy.y + 0.5);
-            if (belowY >= 0 && belowY < MAP_HEIGHT && belowX >= 0 && belowX < MAP_WIDTH) {
-                const tileBelow = map[belowY][belowX];
-                if (tileBelow === 'F') {
-                    enemy.y += 0.8;
-                }
-            }
-        }
+        enemy.x = Math.max(0.2, Math.min(31.8, enemy.x));
+        enemy.y = Math.max(0, Math.min(31.8, enemy.y));
     }
 }
 
@@ -386,6 +468,11 @@ function showGameOverScreen(type) {
         overlayMessage.textContent = "VICTORY!";
         overlayMessage.style.color = "#ffaa33";
         overlayScore.textContent = `Score: ${score} | Gold: ${goldCollected}/${totalGold}`;
+    } else if (type === "crushed") {
+        overlayIcon.textContent = "💀";
+        overlayMessage.textContent = "CRUSHED!";
+        overlayMessage.style.color = "#ff6666";
+        overlayScore.textContent = `You were crushed inside a block! | Score: ${score}`;
     } else {
         overlayIcon.textContent = "💀";
         overlayMessage.textContent = "GAME OVER";
@@ -407,22 +494,41 @@ function render() {
             
             switch(tile) {
                 case 'B':
+                    // BLOCK HITBOX: Full 25x25 pixel solid collision area
+                    // Player cannot move through this area from any direction
+                    // Player stands on top of this tile (collision from above)
+                    // Player collides with left and right sides of this tile
                     ctx.fillStyle = '#8B5A2B';
                     ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
                     ctx.fillStyle = '#5D3A1A';
                     ctx.fillRect(tx + 2, ty + 2, TILE_SIZE - 4, TILE_SIZE - 4);
                     break;
+                    
                 case 'F':
+                    // Broken block - no collision, player and enemies fall through
                     ctx.fillStyle = '#A0522D';
                     ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
                     ctx.fillStyle = '#FFAA66';
                     ctx.fillRect(tx + 5, ty + 5, TILE_SIZE - 10, TILE_SIZE - 10);
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#8B4513';
+                    ctx.lineWidth = 2;
+                    ctx.moveTo(tx + 8, ty + 12);
+                    ctx.lineTo(tx + 17, ty + 20);
+                    ctx.moveTo(tx + 20, ty + 8);
+                    ctx.lineTo(tx + 12, ty + 18);
+                    ctx.stroke();
                     break;
+                    
                 case 'L':
                     ctx.fillStyle = '#CD853F';
                     ctx.fillRect(tx + 10, ty, 5, TILE_SIZE);
-                    for (let i = 0; i < 5; i++) ctx.fillRect(tx + 5, ty + i * 6, 15, 3);
+                    ctx.fillStyle = '#B86F2E';
+                    for (let i = 0; i < 5; i++) {
+                        ctx.fillRect(tx + 5, ty + i * 6, 15, 3);
+                    }
                     break;
+                    
                 case 'G':
                     ctx.fillStyle = '#FFD700';
                     ctx.beginPath();
@@ -433,6 +539,7 @@ function render() {
                     ctx.arc(tx + TILE_SIZE/2, ty + TILE_SIZE/2, 4, 0, Math.PI * 2);
                     ctx.fill();
                     break;
+                    
                 case 'E':
                     ctx.fillStyle = '#2E8B57';
                     ctx.fillRect(tx + 5, ty + 5, TILE_SIZE - 10, TILE_SIZE - 10);
@@ -440,28 +547,55 @@ function render() {
                     ctx.font = `${TILE_SIZE - 5}px monospace`;
                     ctx.fillText('🚪', tx + 4, ty + 20);
                     break;
+                    
                 default:
                     ctx.fillStyle = '#000000';
                     ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
+                    break;
             }
         }
     }
     
+    // Draw enemies
     for (let enemy of enemies) {
         const ex = enemy.x * TILE_SIZE, ey = enemy.y * TILE_SIZE;
-        ctx.fillStyle = enemy.isStuck ? '#8B0000' : '#FF4444';
-        ctx.beginPath();
-        ctx.arc(ex + TILE_SIZE/2, ey + TILE_SIZE/2, 10, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.beginPath();
-        ctx.arc(ex + TILE_SIZE/2 - 3, ey + TILE_SIZE/2 - 2, 2, 0, Math.PI * 2);
-        ctx.arc(ex + TILE_SIZE/2 + 3, ey + TILE_SIZE/2 - 2, 2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(ex + TILE_SIZE/2 - 4, ey + TILE_SIZE/2 + 3, 8, 2);
+        
+        if (enemy.isCaptured) {
+            ctx.fillStyle = '#8B0000';
+            ctx.beginPath();
+            ctx.rect(ex + 5, ey + 5, TILE_SIZE - 10, TILE_SIZE - 10);
+            ctx.fill();
+            ctx.fillStyle = '#FF6666';
+            ctx.font = 'bold 12px monospace';
+            ctx.fillText('❗', ex + 8, ey + 18);
+        } else if (enemy.isStuck) {
+            ctx.fillStyle = '#8B0000';
+            ctx.beginPath();
+            ctx.arc(ex + TILE_SIZE/2, ey + TILE_SIZE/2, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(ex + TILE_SIZE/2 - 3, ey + TILE_SIZE/2 - 2, 2, 0, Math.PI * 2);
+            ctx.arc(ex + TILE_SIZE/2 + 3, ey + TILE_SIZE/2 - 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(ex + TILE_SIZE/2 - 4, ey + TILE_SIZE/2 + 3, 8, 2);
+        } else {
+            ctx.fillStyle = '#FF4444';
+            ctx.beginPath();
+            ctx.arc(ex + TILE_SIZE/2, ey + TILE_SIZE/2, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(ex + TILE_SIZE/2 - 3, ey + TILE_SIZE/2 - 2, 2, 0, Math.PI * 2);
+            ctx.arc(ex + TILE_SIZE/2 + 3, ey + TILE_SIZE/2 - 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(ex + TILE_SIZE/2 - 4, ey + TILE_SIZE/2 + 3, 8, 2);
+        }
     }
     
+    // Draw player
     const px = player.x * TILE_SIZE, py = player.y * TILE_SIZE;
     ctx.fillStyle = '#00AAFF';
     ctx.fillRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8);
@@ -497,6 +631,7 @@ function gameLoop() {
         updateBrokenBlocks();
         updatePlayer();
         updateEnemies();
+        checkPlayerInsideBlock();
         checkPlayerEnemyCollision();
     }
     render();
