@@ -1,4 +1,4 @@
-﻿// js/main.js - Updated with enemy respawn points
+﻿// js/main.js - Updated with external MP3 sound files
 
 import { Player } from './player.js';
 import { Enemy } from './enemy.js';
@@ -11,7 +11,122 @@ const DIG_COOLDOWN = 6000;
 const ENEMY_STUCK_DURATION = 5000;
 const BLOCK_RESTORE_TIME = 6000;
 const GOLD_SCORE_MULTIPLIER = 100;
-const ENEMY_RESPAWN_DELAY = 3000; // 3 seconds before enemy respawns
+const ENEMY_RESPAWN_DELAY = 3000;
+
+// ========== AUDIO SYSTEM ==========
+class AudioSystem {
+    constructor() {
+        this.digSound = null;
+        this.winSound = null;
+        this.deathSound = null;
+        this.goldSound = null;
+        this.enabled = false;
+        this.initOnFirstInteraction();
+        this.preloadSounds();
+    }
+    
+    preloadSounds() {
+        // Preload sound files
+        this.digSound = new Audio('../LoedRunner/assets/Sounds/dig.mp3');
+        this.winSound = new Audio('../LoedRunner/assets/Sounds/win.mp3');
+        
+        // Optional: create fallback sounds if files don't exist
+        this.digSound.volume = 0.5;
+        this.winSound.volume = 0.7;
+    }
+    
+    initOnFirstInteraction() {
+        const initAudio = () => {
+            this.enabled = true;
+            console.log("Audio enabled!");
+            document.removeEventListener('click', initAudio);
+            document.removeEventListener('keydown', initAudio);
+        };
+        
+        document.addEventListener('click', initAudio);
+        document.addEventListener('keydown', initAudio);
+    }
+    
+    playDigSound() {
+        if (!this.enabled) return;
+        try {
+            if (this.digSound) {
+                this.digSound.currentTime = 0;
+                this.digSound.play().catch(e => console.log("Audio play error:", e));
+            }
+        } catch(e) { console.log("Audio error:", e); }
+    }
+    
+    playWinSound() {
+        if (!this.enabled) return;
+        try {
+            if (this.winSound) {
+                this.winSound.currentTime = 0;
+                this.winSound.play().catch(e => console.log("Audio play error:", e));
+            }
+        } catch(e) { console.log("Audio error:", e); }
+    }
+    
+    playDeathSound() {
+        if (!this.enabled) return;
+        try {
+            // Create fallback death sound using Web Audio
+            if (window.AudioContext && !this.deathSound) {
+                this.playFallbackDeathSound();
+            }
+        } catch(e) { console.log("Audio error:", e); }
+    }
+    
+    playFallbackDeathSound() {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioContext.currentTime;
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.type = 'sawtooth';
+        oscillator.frequency.setValueAtTime(300, now);
+        oscillator.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+        
+        gainNode.gain.setValueAtTime(0.3, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+        
+        oscillator.start(now);
+        oscillator.stop(now + 0.4);
+        
+        setTimeout(() => audioContext.close(), 500);
+    }
+    
+    playGoldSound() {
+        if (!this.enabled) return;
+        try {
+            // Create fallback gold sound using Web Audio
+            if (window.AudioContext) {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const now = audioContext.currentTime;
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(800, now);
+                oscillator.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
+                
+                gainNode.gain.setValueAtTime(0.2, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                
+                oscillator.start(now);
+                oscillator.stop(now + 0.15);
+                
+                setTimeout(() => audioContext.close(), 200);
+            }
+        } catch(e) { console.log("Audio error:", e); }
+    }
+}
 
 // ========== DOM ELEMENTS ==========
 let canvas, ctx;
@@ -29,11 +144,13 @@ let goldCollected = 0;
 let totalGold = 0;
 let score = 0;
 let lives = 3;
-let respawnPoints = []; // Store enemy respawn positions
-let pendingRespawns = []; // Track enemies waiting to respawn
+let respawnPoints = [];
+let pendingRespawns = [];
+
+// ========== AUDIO ==========
+let audio = null;
 
 // ========== LEVEL MAP ==========
-// R = Enemy Respawn Point
 const LEVEL_ONE = [
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     "B0000000R000000000000000000R000B",
@@ -59,7 +176,7 @@ const LEVEL_ONE = [
     "BBBBBBBLBBBBBBBBBBBBBBBBBBBBBBBB",
     "B000000L00000000000000000000000B",
     "B000000L00000000000000000000000B",
-    "B000000L00000000000000000000000B",  // R = respawn point
+    "B000000L00000000000000000000000B",
     "BBBBBBBLBBBBBBBBBBBBBBBBBBBBBBBB",
     "B000000L00000000000000000000000B",
     "B000000L00000000000000000000M00B",
@@ -71,6 +188,7 @@ const LEVEL_ONE = [
 
 // ========== INITIALIZATION ==========
 function init() {
+    audio = new AudioSystem();
     cacheDomElements();
     setupEventListeners();
     initMap();
@@ -127,17 +245,21 @@ function setupEventListeners() {
 // ========== GAME ACTIONS ==========
 function tryDigLeft() {
     if (!gameRunning || !player || gameOverFlag) return;
-    digBlockAt(Math.floor(player.x) - 1, Math.floor(player.y) + 1);
+    if (digBlockAt(Math.floor(player.x) - 1, Math.floor(player.y) + 1)) {
+        audio.playDigSound();  // Play dig sound when successful
+    }
 }
 
 function tryDigRight() {
     if (!gameRunning || !player || gameOverFlag) return;
-    digBlockAt(Math.floor(player.x) + 1, Math.floor(player.y) + 1);
+    if (digBlockAt(Math.floor(player.x) + 1, Math.floor(player.y) + 1)) {
+        audio.playDigSound();  // Play dig sound when successful
+    }
 }
 
 function digBlockAt(x, y) {
-    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return;
-    if (map[y][x] !== 'B') return;
+    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
+    if (map[y][x] !== 'B') return false;
     
     map[y][x] = 'F';
     brokenBlocks.set(`${x},${y}`, {
@@ -146,6 +268,7 @@ function digBlockAt(x, y) {
         stuckUntil: null,
         escapeDirection: null
     });
+    return true;
 }
 
 // ========== ENEMY RESPAWN SYSTEM ==========
@@ -163,37 +286,7 @@ function findNearestRespawnPoint(x, y) {
     return nearest;
 }
 
-function respawnEnemy() {
-    const now = Date.now();
-    const respawnList = [...pendingRespawns];
-    
-    for (const respawn of respawnList) {
-        if (now >= respawn.respawnTime) {
-            // Find the respawn point to use
-            let spawnPoint = respawn.respawnPoint;
-            
-            // If no specific respawn point, find nearest
-            if (!spawnPoint) {
-                spawnPoint = findNearestRespawnPoint(respawn.originalX, respawn.originalY);
-            }
-            
-            if (spawnPoint) {
-                // Create new enemy at respawn point
-                const newEnemy = new Enemy(spawnPoint.x, spawnPoint.y);
-                enemies.push(newEnemy);
-                
-                // Remove from pending respawns
-                const index = pendingRespawns.indexOf(respawn);
-                if (index !== -1) {
-                    pendingRespawns.splice(index, 1);
-                }
-            }
-        }
-    }
-}
-
 function scheduleEnemyRespawn(enemy) {
-    // Find nearest respawn point
     const respawnPoint = findNearestRespawnPoint(enemy.x, enemy.y);
     
     if (respawnPoint) {
@@ -203,6 +296,31 @@ function scheduleEnemyRespawn(enemy) {
             originalX: enemy.x,
             originalY: enemy.y
         });
+    }
+}
+
+function respawnEnemy() {
+    const now = Date.now();
+    const respawnList = [...pendingRespawns];
+    
+    for (const respawn of respawnList) {
+        if (now >= respawn.respawnTime) {
+            let spawnPoint = respawn.respawnPoint;
+            
+            if (!spawnPoint) {
+                spawnPoint = findNearestRespawnPoint(respawn.originalX, respawn.originalY);
+            }
+            
+            if (spawnPoint) {
+                const newEnemy = new Enemy(spawnPoint.x, spawnPoint.y);
+                enemies.push(newEnemy);
+                
+                const index = pendingRespawns.indexOf(respawn);
+                if (index !== -1) {
+                    pendingRespawns.splice(index, 1);
+                }
+            }
+        }
     }
 }
 
@@ -242,7 +360,7 @@ function initMap() {
             }
             if (tile === 'R') {
                 respawnPoints.push({ x, y });
-                map[y][x] = '0'; // Remove R from map after storing
+                map[y][x] = '0';
             }
         }
     }
@@ -288,7 +406,6 @@ function processEscapes(escapes) {
             enemy.isAlive = true;
             enemy.vy = enemy.vx = 0;
         } else {
-            // Enemy dies if no escape position, schedule respawn
             const index = enemies.indexOf(enemy);
             if (index !== -1) enemies.splice(index, 1);
             enemy.isAlive = false;
@@ -351,6 +468,7 @@ function collectGold() {
         map[gy][gx] = '0';
         goldCollected++;
         score = goldCollected * GOLD_SCORE_MULTIPLIER;
+        audio.playGoldSound();  // Play gold collection sound
         updateUI();
     }
 }
@@ -360,6 +478,7 @@ function checkExit() {
     const ey = Math.floor(player.y);
     
     if (map[ey]?.[ex] === 'E' && goldCollected === totalGold && totalGold > 0) {
+        audio.playWinSound();  // Play victory sound when winning
         endGame('win');
     }
 }
@@ -374,16 +493,18 @@ function updateEnemies() {
 function checkCollisions() {
     if (!player || gameOverFlag) return;
     
-    // Check crushed by block
     const px = Math.floor(player.x);
     const py = Math.floor(player.y);
-    if (map[py]?.[px] === 'B') endGame('crushed');
+    if (map[py]?.[px] === 'B') {
+        audio.playDeathSound();  // Play death sound
+        endGame('crushed');
+    }
     
-    // Check enemy collision
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
         if (!enemy.isAlive || enemy.isCaptured) continue;
         if (Math.abs(player.x - enemy.x) < 0.7 && Math.abs(player.y - enemy.y) < 0.7) {
+            audio.playDeathSound();  // Play death sound
             endGame('caught');
             return;
         }
@@ -458,16 +579,6 @@ function renderMap() {
                 ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
             }
         }
-    }
-    
-    // Draw respawn points (debug - can remove for final game)
-    for (const point of respawnPoints) {
-        const tx = point.x * TILE_SIZE;
-        const ty = point.y * TILE_SIZE;
-        ctx.fillStyle = '#FF00FF88';
-        ctx.beginPath();
-        ctx.arc(tx + TILE_SIZE/2, ty + TILE_SIZE/2, 5, 0, Math.PI * 2);
-        ctx.fill();
     }
 }
 
@@ -605,7 +716,7 @@ function resetGame() {
 // ========== GAME LOOP ==========
 function gameLoop() {
     if (gameRunning && player && !gameOverFlag) {
-        respawnEnemy();  // Check for enemies to respawn
+        respawnEnemy();
         updateBrokenBlocks();
         updatePlayer();
         updateEnemies();
