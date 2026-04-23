@@ -1,4 +1,4 @@
-﻿// js/main.js - Optimized main game logic
+﻿// js/main.js - Updated with enemy respawn points
 
 import { Player } from './player.js';
 import { Enemy } from './enemy.js';
@@ -11,6 +11,7 @@ const DIG_COOLDOWN = 6000;
 const ENEMY_STUCK_DURATION = 5000;
 const BLOCK_RESTORE_TIME = 6000;
 const GOLD_SCORE_MULTIPLIER = 100;
+const ENEMY_RESPAWN_DELAY = 3000; // 3 seconds before enemy respawns
 
 // ========== DOM ELEMENTS ==========
 let canvas, ctx;
@@ -28,39 +29,42 @@ let goldCollected = 0;
 let totalGold = 0;
 let score = 0;
 let lives = 3;
+let respawnPoints = []; // Store enemy respawn positions
+let pendingRespawns = []; // Track enemies waiting to respawn
 
 // ========== LEVEL MAP ==========
+// R = Enemy Respawn Point
 const LEVEL_ONE = [
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     "B000000000000000000000000000000B",
-    "B0G0000L000000000000000000000G0B",
-    "BBBBBBBLBBBBBBBBBBBBBBBBBBBBBBBB",
-    "B000000L00000000000000000000000B",
+    "B0G00000000000000000000000000G0B",
+    "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    "B000000000000000000000000000000B",
     "B000000L000000G0000000000000000B",
     "B000000LBBBBBBBBBBBBBBBBBBBB000B",
     "B0G0000L00000000000000000000000B",
     "B000000L00000000000000000000000B",
     "B000000L00000000000000000000000B",
-    "BBBBBBBL00BBBBBBBBBBBBBBBBBBBBBB",
+    "B000000L00BBBBBBBBBBBBBBBBBBBBBB",
     "B000000L00000000000000000000000B",
     "B000000L00000000000000000000G00B",
-    "BBBBBBBLBBBBBBBBBBBBBBBBBBBBBBBB",
+    "B000000LBBBBBBBBBBBBBBBBBBBBBBBB",
     "B000000L00000000000000000000000B",
     "B000000L00000000000000000000000B",
     "B000000L00000000000000000000000B",
-    "BBBBBBBL00BBBBBBBBBBBBBBBBBBBBBB",
+    "B000000L00BBBBBBBBBBBBBBBBBBBBBB",
     "B000000L00000000000000000000000B",
-    "B000000L0000000000000000000M000B",
+    "B000000L00000000000000000000000B",
     "B0G0000L00000000000000000000000B",
-    "BBBBBBBLBBBBBBBBBBBBBBBBBBBBBBBB",
+    "B000000LBBBBBBBBBBBBBBBBBBBBBBBB",
     "B000000L00000000000000000000000B",
     "B000000L00000000000000000000000B",
-    "B000000L00000000000000000000000B",
-    "BBBBBBBLBBBBBBBBBBBBBBBBBBBBBBBB",
+    "B000000R00000000000000000000000B",  // R = respawn point
+    "B000000LBBBBBBBBBBBBBBBBBBBBBBBB",
     "B000000L00000000000000000000000B",
     "B000000L00000000000000000000M00B",
     "B0S0000L000000G00000000000000E0B",
-    "BBBBBBBLBBBBBBBBBBBBBBBBBBBBBBBB",
+    "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
 ];
@@ -144,9 +148,69 @@ function digBlockAt(x, y) {
     });
 }
 
+// ========== ENEMY RESPAWN SYSTEM ==========
+function findNearestRespawnPoint(x, y) {
+    let nearest = null;
+    let minDist = Infinity;
+    
+    for (const point of respawnPoints) {
+        const dist = Math.abs(x - point.x) + Math.abs(y - point.y);
+        if (dist < minDist) {
+            minDist = dist;
+            nearest = point;
+        }
+    }
+    return nearest;
+}
+
+function respawnEnemy() {
+    const now = Date.now();
+    const respawnList = [...pendingRespawns];
+    
+    for (const respawn of respawnList) {
+        if (now >= respawn.respawnTime) {
+            // Find the respawn point to use
+            let spawnPoint = respawn.respawnPoint;
+            
+            // If no specific respawn point, find nearest
+            if (!spawnPoint) {
+                spawnPoint = findNearestRespawnPoint(respawn.originalX, respawn.originalY);
+            }
+            
+            if (spawnPoint) {
+                // Create new enemy at respawn point
+                const newEnemy = new Enemy(spawnPoint.x, spawnPoint.y);
+                enemies.push(newEnemy);
+                
+                // Remove from pending respawns
+                const index = pendingRespawns.indexOf(respawn);
+                if (index !== -1) {
+                    pendingRespawns.splice(index, 1);
+                }
+            }
+        }
+    }
+}
+
+function scheduleEnemyRespawn(enemy) {
+    // Find nearest respawn point
+    const respawnPoint = findNearestRespawnPoint(enemy.x, enemy.y);
+    
+    if (respawnPoint) {
+        pendingRespawns.push({
+            respawnTime: Date.now() + ENEMY_RESPAWN_DELAY,
+            respawnPoint: respawnPoint,
+            originalX: enemy.x,
+            originalY: enemy.y
+        });
+    }
+}
+
 // ========== MAP INITIALIZATION ==========
 function initMap() {
     map = Array(MAP_HEIGHT).fill().map(() => Array(MAP_WIDTH).fill('0'));
+    respawnPoints = [];
+    pendingRespawns = [];
     
     for (let y = 0; y < MAP_HEIGHT && y < LEVEL_ONE.length; y++) {
         for (let x = 0; x < MAP_WIDTH && x < LEVEL_ONE[y].length; x++) {
@@ -175,6 +239,10 @@ function initMap() {
             if (tile === 'M') {
                 enemies.push(new Enemy(x, y));
                 map[y][x] = '0';
+            }
+            if (tile === 'R') {
+                respawnPoints.push({ x, y });
+                map[y][x] = '0'; // Remove R from map after storing
             }
         }
     }
@@ -220,10 +288,12 @@ function processEscapes(escapes) {
             enemy.isAlive = true;
             enemy.vy = enemy.vx = 0;
         } else {
+            // Enemy dies if no escape position, schedule respawn
             const index = enemies.indexOf(enemy);
             if (index !== -1) enemies.splice(index, 1);
             enemy.isAlive = false;
             enemy.isCaptured = false;
+            scheduleEnemyRespawn(enemy);
         }
         
         data.enemyInside = null;
@@ -256,6 +326,7 @@ function restoreBlocks(blocks) {
             if (index !== -1) enemies.splice(index, 1);
             enemy.isAlive = false;
             enemy.isCaptured = false;
+            scheduleEnemyRespawn(enemy);
         }
         
         if (map[y][x] === 'F') map[y][x] = 'B';
@@ -309,7 +380,8 @@ function checkCollisions() {
     if (map[py]?.[px] === 'B') endGame('crushed');
     
     // Check enemy collision
-    for (const enemy of enemies) {
+    for (let i = 0; i < enemies.length; i++) {
+        const enemy = enemies[i];
         if (!enemy.isAlive || enemy.isCaptured) continue;
         if (Math.abs(player.x - enemy.x) < 0.7 && Math.abs(player.y - enemy.y) < 0.7) {
             endGame('caught');
@@ -386,6 +458,16 @@ function renderMap() {
                 ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
             }
         }
+    }
+    
+    // Draw respawn points (debug - can remove for final game)
+    for (const point of respawnPoints) {
+        const tx = point.x * TILE_SIZE;
+        const ty = point.y * TILE_SIZE;
+        ctx.fillStyle = '#FF00FF88';
+        ctx.beginPath();
+        ctx.arc(tx + TILE_SIZE/2, ty + TILE_SIZE/2, 5, 0, Math.PI * 2);
+        ctx.fill();
     }
 }
 
@@ -492,7 +574,6 @@ function renderPlayer() {
     ctx.arc(px + 15, py + 12, 2, 0, Math.PI * 2);
     ctx.fill();
     
-    // Show falling indicator
     if (player.isCurrentlyFalling?.()) {
         ctx.fillStyle = '#FFFFFF88';
         ctx.font = 'bold 10px monospace';
@@ -515,6 +596,7 @@ function resetGame() {
     score = 0;
     lives = 3;
     brokenBlocks.clear();
+    pendingRespawns = [];
     if (gameOverlay) gameOverlay.style.display = 'none';
     initMap();
     updateUI();
@@ -523,6 +605,7 @@ function resetGame() {
 // ========== GAME LOOP ==========
 function gameLoop() {
     if (gameRunning && player && !gameOverFlag) {
+        respawnEnemy();  // Check for enemies to respawn
         updateBrokenBlocks();
         updatePlayer();
         updateEnemies();
