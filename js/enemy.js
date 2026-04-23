@@ -1,4 +1,4 @@
-// js/enemy.js - Enemy class with improved patrolling
+// js/enemy.js - Enemy class with simple working movement
 
 const ENEMY_GRAVITY_NORMAL = 0.15;
 const ENEMY_GRAVITY_BROKEN = 0.25;
@@ -25,8 +25,6 @@ export class Enemy {
         this.onGround = false;
         this.onLadder = false;
         this.directionChangeTimer = 0;
-        this.patrolDirection = 'right';  // Added patrol direction
-        this.patrolTimer = 0;             // Added patrol timer
         
         this.gravityNormal = ENEMY_GRAVITY_NORMAL;
         this.gravityBroken = ENEMY_GRAVITY_BROKEN;
@@ -151,21 +149,6 @@ export class Enemy {
     }
     
     /**
-     * Move horizontally with direction (for patrolling)
-     */
-    moveHorizontalDir(direction, map) {
-        const step = (direction === 'right' ? 1 : -1) * this.speed;
-        const newX = this.x + step;
-        
-        if (!this.collidesWithBlock(newX, this.y, map)) {
-            this.x = newX;
-            this.lastMoveDir = direction;
-            return true;
-        }
-        return false;
-    }
-    
-    /**
      * Move vertically on ladder
      */
     moveVertical(targetY, map) {
@@ -179,6 +162,7 @@ export class Enemy {
         
         if (yTile >= 0 && yTile < map.length && xTile >= 0 && xTile < map[0].length) {
             const tile = map[yTile][xTile];
+            // Can move to ladder, empty space, gold, or exit
             if (tile === 'L' || tile === '0' || tile === 'G' || tile === 'E') {
                 this.y = newY;
                 return true;
@@ -188,7 +172,7 @@ export class Enemy {
     }
     
     /**
-     * Simple chase logic
+     * Simple chase logic - moves towards player using ladders
      */
     simpleChase(player, map) {
         const onLadder = this.isOnLadder(map);
@@ -197,31 +181,42 @@ export class Enemy {
         const dx = playerX - this.x;
         const dy = playerY - this.y;
         
+        // Check if player is above or below
         const playerAbove = playerY < this.y - 0.5;
         const playerBelow = playerY > this.y + 0.5;
         
+        // If on ladder, prioritize vertical movement
         if (onLadder) {
+            // Climb towards player's Y position
             if (Math.abs(dy) > 0.3) {
                 this.moveVertical(playerY, map);
             }
+            // Then move horizontally
             if (Math.abs(dx) > 0.2) {
                 this.moveHorizontal(playerX, map);
             }
         }
+        // If player is above and there's a ladder above, climb up
         else if (playerAbove && this.isLadderAbove(map)) {
             this.moveVertical(playerY, map);
         }
+        // If player is below and there's a ladder below, climb down
         else if (playerBelow && this.isLadderBelow(map)) {
             this.moveVertical(playerY, map);
         }
+        // Otherwise move horizontally
         else {
+            // Move towards player horizontally
             if (Math.abs(dx) > 0.2) {
                 this.moveHorizontal(playerX, map);
             }
             
+            // If we can't move horizontally, try to find a ladder
             if (Math.abs(dx) > 0.2 && this.x === this.lastX) {
+                // Look for ladder to change level
                 this.directionChangeTimer++;
                 if (this.directionChangeTimer > 30) {
+                    // Try moving in opposite direction
                     this.moveHorizontal(this.x - dx, map);
                     this.directionChangeTimer = 0;
                 }
@@ -231,58 +226,6 @@ export class Enemy {
         }
         
         this.lastX = this.x;
-    }
-    
-    /**
-     * Patrolling movement - walks back and forth
-     */
-    patrolMove(map) {
-        const onLadder = this.isOnLadder(map);
-        
-        // On ladder, patrol up and down
-        if (onLadder) {
-            this.patrolTimer++;
-            if (this.patrolTimer > 60) {
-                this.patrolTimer = 0;
-                // Change vertical direction
-                if (this.patrolDirection === 'up') {
-                    this.patrolDirection = 'down';
-                } else {
-                    this.patrolDirection = 'up';
-                }
-            }
-            
-            if (this.patrolDirection === 'up') {
-                this.moveVertical(this.y - 0.3, map);
-            } else {
-                this.moveVertical(this.y + 0.3, map);
-            }
-        }
-        // Ground patrolling
-        else {
-            this.patrolTimer++;
-            if (this.patrolTimer > 90) {
-                this.patrolTimer = 0;
-                // Change horizontal direction
-                if (this.patrolDirection === 'right') {
-                    this.patrolDirection = 'left';
-                } else {
-                    this.patrolDirection = 'right';
-                }
-            }
-            
-            // Try to move in patrol direction
-            const moved = this.moveHorizontalDir(this.patrolDirection, map);
-            
-            // If blocked, change direction
-            if (!moved) {
-                if (this.patrolDirection === 'right') {
-                    this.patrolDirection = 'left';
-                } else {
-                    this.patrolDirection = 'right';
-                }
-            }
-        }
     }
     
     /**
@@ -343,6 +286,36 @@ export class Enemy {
     }
     
     /**
+     * Idle movement
+     */
+    idleMove(map) {
+        const onLadder = this.isOnLadder(map);
+        
+        // On ladder, randomly move up/down
+        if (onLadder && Math.random() < 0.05) {
+            if (Math.random() < 0.5) {
+                this.moveVertical(this.y - 0.3, map);
+            } else {
+                this.moveVertical(this.y + 0.3, map);
+            }
+        }
+        // Random horizontal movement
+        else if (Math.random() < 0.02) {
+            if (Math.random() < 0.5) {
+                if (!this.collidesWithBlock(this.x + 0.05, this.y, map)) {
+                    this.x += 0.05;
+                    this.lastMoveDir = 'right';
+                }
+            } else {
+                if (!this.collidesWithBlock(this.x - 0.05, this.y, map)) {
+                    this.x -= 0.05;
+                    this.lastMoveDir = 'left';
+                }
+            }
+        }
+    }
+    
+    /**
      * Check if enemy falls into broken block
      */
     checkBrokenBlockCapture(map, brokenBlocks) {
@@ -391,6 +364,7 @@ export class Enemy {
     update(map, player, brokenBlocks) {
         if (!this.isAlive) return;
         
+        // Handle stuck state
         if (this.isStuck) {
             if (Date.now() >= this.stuckUntil) {
                 this.isStuck = false;
@@ -404,21 +378,26 @@ export class Enemy {
             return;
         }
         
+        // Handle captured state
         if (this.isCaptured) return;
         
+        // Check for capture in broken block
         this.checkBrokenBlockCapture(map, brokenBlocks);
         if (this.isCaptured) return;
         
+        // Chase or idle
         const dist = this.distanceTo(player);
         
         if (dist <= this.chaseRange) {
             this.simpleChase(player, map);
         } else {
-            this.patrolMove(map);  // Changed from idleMove to patrolMove
+            this.idleMove(map);
         }
         
+        // Apply gravity
         this.applyGravity(map);
         
+        // Boundary clamping
         this.x = Math.max(0.2, Math.min(31.8, this.x));
         this.y = Math.max(0, Math.min(31.8, this.y));
     }
