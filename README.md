@@ -333,16 +333,16 @@ LADDER SPEED:     0.14 tiles per frame
     ┌─────────────────────────────────────────┐
     │  W = Up / Climb    │  O = Dig Left Hole │
     │  A = Left          │  P = Dig Right Hole│
-    │  S = Down / Climb  │                     │
-    │  D = Right         │                     │
+    │  S = Down / Climb  │                    │
+    │  D = Right         │                    │
     └─────────────────────────────────────────┘
 
     MAP SYMBOLS:
-    ┌─────────────────────────────────────────┐
-    │  0 = Empty    │  L = Ladder   │  M = Enemy    │
-    │  B = Block    │  G = Gold     │  R = Respawn   │
-    │  F = Broken   │  S = Start    │  E = Exit      │
-    └─────────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────┐
+    │  0 = Empty    │  L = Ladder   │  M = Enemy      │
+    │  B = Block    │  G = Gold     │  R = Respawn    │
+    │  F = Broken   │  S = Start    │  E = Exit       │
+    └─────────────────────────────────────────────────┘
 
     TIMERS:
     ┌─────────────────────────────────────────┐
